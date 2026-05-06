@@ -1,6 +1,5 @@
-from pathlib import Path
 
-html = """<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
@@ -397,7 +396,7 @@ html = """<!DOCTYPE html>
         <h2 style="margin:0 0 12px; font-size:20px; color:#ffffff;">빠른 정리</h2>
         <div class="lead" style="margin-top:0;">
           <p>
-            트랜스포머를 배우면서 챗지피티가 문장을 어떻게 처리하는지 궁금해졌다.
+            트랜스포머를 배우면서 AI가 문장을 어떻게 처리하는지 궁금해졌다.
             AI는 사람이 생각하는 것처럼 답을 만드는 것이 아니라, 다음에 나올 단어를
             확률적으로 고른다고 해서 신기했다. 그래서 tmpr 값에 따라 어떤 결과가 나오는지
             알아보기 위해서 13번의 실험을 하였다.
@@ -798,8 +797,3 @@ html = """<!DOCTYPE html>
   </script>
 </body>
 </html>
-"""
-
-path = Path("/mnt/data/index_complete.html")
-path.write_text(html, encoding="utf-8")
-print(path.as_posix())
