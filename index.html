@@ -1,587 +1,402 @@
-<!DOCTYPE html>
+from pathlib import Path
+
+experiments = [
+    {
+        "num": 1, "temp": "0.2", "topk": "1", "result": "weight", "prob": "100%",
+        "prob_w": "100%", "temp_w": "3.3%", "topk_w": "2.5%", "badge": "낮은 temperature",
+        "note": "temperature가 매우 낮고 top-k도 1이라 가장 확실한 후보만 선택된 경우이다.",
+        "detail1": "이 실험은 temperature가 매우 낮고 top-k가 1이어서 사실상 가장 높은 확률을 가진 단어 하나만 고르는 구조이다.",
+        "detail2": "그래서 결과가 100%로 매우 강하게 집중되었고, 모델이 가장 확신하는 후보만 바로 선택한 모습으로 볼 수 있다.",
+        "detail3": "다른 실험과 비교할 때, temperature와 top-k가 모두 작으면 출력이 얼마나 안정적으로 고정되는지 보여주는 기준점 역할을 한다."
+    },
+    {
+        "num": 2, "temp": "0.3", "topk": "1", "result": "was", "prob": "100%",
+        "prob_w": "100%", "temp_w": "5%", "topk_w": "2.5%", "badge": "낮은 temperature",
+        "note": "실험 1과 비슷하게 낮은 temperature 때문에 결과가 매우 고정적으로 나타났다.",
+        "detail1": "이 실험도 top-k가 1이기 때문에 후보를 넓게 탐색하지 않고 가장 높은 확률의 후보만 선택한다.",
+        "detail2": "temperature가 0.3으로 실험 1보다 약간 높지만 여전히 매우 낮아서 결과가 안정적으로 유지되며 확률도 100%로 나타난다.",
+        "detail3": "즉, top-k가 1인 조건에서는 temperature가 조금 달라도 출력이 크게 흔들리지 않을 수 있다는 점을 보여준다."
+    },
+    {
+        "num": 3, "temp": "0.4", "topk": "35", "result": "newline", "prob": "89.74%",
+        "prob_w": "89.74%", "temp_w": "6.7%", "topk_w": "87.5%", "badge": "낮은 temperature, 큰 top-k",
+        "note": "temperature는 낮지만 top-k가 커지면서 후보 수가 많아졌다.",
+        "detail1": "temperature는 여전히 낮은 편이지만 top-k가 35로 크게 늘어나면서 모델이 고려할 수 있는 후보 단어 수가 많아졌다.",
+        "detail2": "그럼에도 확률이 89.74%로 높게 나온 것은 후보가 많아져도 특정 단어에 확신이 상당히 집중되어 있음을 의미한다.",
+        "detail3": "즉, temperature가 낮으면 후보 풀이 커져도 여전히 한 결과 쪽으로 확률이 강하게 모일 수 있음을 보여주는 사례이다."
+    },
+    {
+        "num": 4, "temp": "0.7", "topk": "35", "result": "The", "prob": "13.32%",
+        "prob_w": "13.32%", "temp_w": "11.7%", "topk_w": "87.5%", "badge": "중간 temperature",
+        "note": "temperature가 올라가면서 확률이 분산되어 결과 확률이 크게 낮아졌다.",
+        "detail1": "top-k는 35로 유지된 상태에서 temperature만 0.7로 높아지면서 후보들 사이의 확률 분포가 더 퍼지기 시작했다.",
+        "detail2": "그 결과 1위 후보의 확률이 13.32%까지 크게 낮아졌고, 한 단어에 대한 확신이 약해졌다고 볼 수 있다.",
+        "detail3": "실험 3과 비교하면 top-k가 같아도 temperature 상승만으로 결과의 집중도가 얼마나 약해지는지 잘 드러난다."
+    },
+    {
+        "num": 5, "temp": "2", "topk": "35", "result": "A", "prob": "2.54%",
+        "prob_w": "2.54%", "temp_w": "33.3%", "topk_w": "87.5%", "badge": "높은 temperature",
+        "note": "높은 temperature로 인해 결과가 매우 다양해지고 한 단어의 확률은 낮아졌다.",
+        "detail1": "temperature가 2까지 높아지면 모델은 더 다양한 단어를 선택할 가능성을 크게 열어두게 된다.",
+        "detail2": "그래서 1위 후보의 확률이 2.54%처럼 매우 낮아졌고, 출력이 여러 후보로 넓게 분산된 상태라고 해석할 수 있다.",
+        "detail3": "이 실험은 temperature가 높아질수록 모델이 한 가지 답에 덜 확신하고 더 다양한 출력을 만들 수 있다는 점을 잘 보여준다."
+    },
+    {
+        "num": 6, "temp": "3", "topk": "35", "result": "It", "prob": "5.41%",
+        "prob_w": "5.41%", "temp_w": "50%", "topk_w": "87.5%", "badge": "높은 temperature",
+        "note": "temperature가 더 높아져 여러 후보가 고르게 선택될 수 있는 상태이다.",
+        "detail1": "temperature가 3이면 확률 분포가 더 평평해져서 여러 후보 단어들이 서로 비슷한 기회를 갖게 된다.",
+        "detail2": "1위 확률이 5.41%로 낮은 것도 모델이 특정 단어 하나를 강하게 밀지 않고 있다는 뜻이다.",
+        "detail3": "실험 5와 함께 보면 높은 temperature 구간에서는 결과가 다소 달라져도 전체적으로 확신이 낮고 다양성이 큰 공통 특징을 확인할 수 있다."
+    },
+    {
+        "num": 7, "temp": "4", "topk": "35", "result": "But", "prob": "3.17%",
+        "prob_w": "3.17%", "temp_w": "66.7%", "topk_w": "87.5%", "badge": "매우 높은 temperature",
+        "note": "temperature가 높아질수록 한 결과에 대한 확신이 더 약해진다.",
+        "detail1": "temperature가 4로 더 높아지면 모델은 상위 후보뿐 아니라 상대적으로 낮은 확률의 후보도 선택할 수 있게 된다.",
+        "detail2": "따라서 결과 확률이 3.17%에 머무르며, 출력의 예측 가능성이 낮아지고 무작위성이 더 커진다.",
+        "detail3": "이 실험은 temperature 상승이 곧바로 안정성 감소와 연결될 수 있음을 구체적으로 보여준다."
+    },
+    {
+        "num": 8, "temp": "6", "topk": "35", "result": "When", "prob": "3.08%",
+        "prob_w": "3.08%", "temp_w": "100%", "topk_w": "87.5%", "badge": "가장 높은 temperature",
+        "note": "가장 높은 temperature 조건으로, 출력의 다양성이 매우 커진 실험이다.",
+        "detail1": "temperature가 6이면 이번 실험들 중에서 가장 높은 값으로, 모델이 단어를 매우 넓게 탐색하는 조건이다.",
+        "detail2": "그래서 1위 확률이 3.08%에 불과해 여러 후보가 거의 비슷한 수준으로 경쟁하는 상황이라고 볼 수 있다.",
+        "detail3": "이 실험은 높은 temperature가 결과 다양성은 키우지만 안정성과 예측 가능성은 크게 낮출 수 있다는 점을 가장 극단적으로 보여준다."
+    },
+    {
+        "num": 9, "temp": "3", "topk": "15", "result": "After", "prob": "5.08%",
+        "prob_w": "5.08%", "temp_w": "50%", "topk_w": "37.5%", "badge": "Top-k 축소 비교",
+        "note": "같은 temperature에서도 top-k를 줄이면 후보 범위가 제한된다.",
+        "detail1": "temperature는 3으로 유지하면서 top-k를 15로 줄이면 모델이 고려할 수 있는 후보 개수가 줄어든다.",
+        "detail2": "그 결과 확률이 조금 더 모일 가능성이 생기지만, 여전히 temperature가 높기 때문에 출력은 완전히 안정적이지는 않다.",
+        "detail3": "이 실험은 같은 temperature 조건에서도 top-k 조절만으로 후보 범위가 달라지고 결과 양상이 변할 수 있음을 보여준다."
+    },
+    {
+        "num": 10, "temp": "2", "topk": "15", "result": "After", "prob": "5.08%",
+        "prob_w": "5.08%", "temp_w": "33.3%", "topk_w": "37.5%", "badge": "Top-k 15 비교",
+        "note": "top-k가 15로 같을 때 temperature 차이에 따른 결과를 비교할 수 있다.",
+        "detail1": "이 실험은 실험 9와 top-k를 동일하게 맞춘 상태에서 temperature만 다르게 두어 비교할 수 있게 한다.",
+        "detail2": "같은 결과가 나왔더라도 내부적으로는 temperature 차이에 따라 확률 분포가 달라질 수 있으며, 출력의 안정성 해석에도 차이가 생긴다.",
+        "detail3": "즉, top-k를 고정하면 temperature 변화가 결과에 미치는 영향을 좀 더 직접적으로 볼 수 있다는 점에서 비교용 실험으로 의미가 있다."
+    },
+    {
+        "num": 11, "temp": "3", "topk": "40", "result": "I", "prob": "3.55%",
+        "prob_w": "3.55%", "temp_w": "50%", "topk_w": "100%", "badge": "가장 큰 Top-k",
+        "note": "top-k가 가장 커서 선택 가능한 후보가 가장 많은 실험이다.",
+        "detail1": "이 실험은 top-k가 40으로 가장 커서 모델이 선택할 수 있는 후보 범위가 가장 넓다.",
+        "detail2": "temperature도 3으로 높은 편이어서 후보 수 확대와 확률 분산이 동시에 일어나 1위 확률이 낮게 나타난다.",
+        "detail3": "따라서 top-k가 커질수록 선택 폭은 넓어지지만, 한 단어에 확률이 집중되기는 더 어려워질 수 있음을 보여준다."
+    },
+    {
+        "num": 12, "temp": "3", "topk": "5", "result": '"', "prob": "14.83%",
+        "prob_w": "14.83%", "temp_w": "50%", "topk_w": "12.5%", "badge": "작은 Top-k",
+        "note": "top-k가 작아져 후보가 적어지면서 상대적으로 확률이 더 집중되었다.",
+        "detail1": "temperature는 3으로 높은 편이지만 top-k를 5로 크게 줄여서 후보 집합을 매우 좁게 제한했다.",
+        "detail2": "그래서 높은 temperature 조건임에도 1위 확률이 14.83%로 상대적으로 더 크게 나타났다.",
+        "detail3": "이는 top-k를 작게 두면 결과 다양성이 어느 정도 제한되면서 확률이 다시 상위 후보에 모일 수 있다는 점을 잘 보여준다."
+    },
+    {
+        "num": 13, "temp": "2", "topk": "20", "result": "But", "prob": "4.17%",
+        "prob_w": "4.17%", "temp_w": "33.3%", "topk_w": "50%", "badge": "중간 조건",
+        "note": "중간 정도의 temperature와 top-k 조건에서 나온 결과이다.",
+        "detail1": "이 실험은 temperature 2와 top-k 20이라는 중간 수준 조건에서 모델이 어떤 출력을 내는지 보여준다.",
+        "detail2": "후보 수가 너무 작지도 크지도 않고, temperature도 매우 낮지는 않아서 결과 확률은 중간 정도로 분산된 상태를 보인다.",
+        "detail3": "그래서 이 실험은 극단적인 조건 사이에서 모델이 어떻게 반응하는지 살펴보는 완충 구간 역할을 한다."
+    },
+]
+
+cards_html = []
+for e in experiments:
+    cards_html.append(f"""
+            <article class="exp-card" onclick="toggleDetail({e['num']})">
+              <div class="exp-head">
+                <div class="exp-title">실험 {e['num']}</div>
+                <div class="badge">{e['badge']}</div>
+              </div>
+              <div class="exp-body">
+                <div class="meta">
+                  <div class="meta-item"><div class="k">Temperature</div><div class="v">{e['temp']}</div></div>
+                  <div class="meta-item"><div class="k">Top-k</div><div class="v">{e['topk']}</div></div>
+                </div>
+                <div class="result-box"><strong>결과:</strong> {e['result']}<br><strong>확률:</strong> {e['prob']}</div>
+                <div class="bars">
+                  <div><div class="bar-label"><span>결과 확률</span><span>{e['prob']}</span></div><div class="bar-bg"><div class="bar-fill probability" style="width:{e['prob_w']};">{e['prob']}</div></div></div>
+                  <div><div class="bar-label"><span>Temperature</span><span>{e['temp']}</span></div><div class="bar-bg"><div class="bar-fill temperature" style="width:{e['temp_w']};">{e['temp']}</div></div></div>
+                  <div><div class="bar-label"><span>Top-k</span><span>{e['topk']}</span></div><div class="bar-bg"><div class="bar-fill topk" style="width:{e['topk_w']};">{e['topk']}</div></div></div>
+                </div>
+                <div class="note">{e['note']}</div>
+                <div id="detail-{e['num']}" class="detail-panel">
+                  <div class="detail-title">실험 {e['num']} 상세 해석</div>
+                  <ul>
+                    <li>{e['detail1']}</li>
+                    <li>{e['detail2']}</li>
+                    <li>{e['detail3']}</li>
+                  </ul>
+                </div>
+              </div>
+            </article>
+    """)
+
+html = f"""<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Transformer 사용 보고서</title>
   <style>
-    body {
-      font-family: "Malgun Gothic", Arial, sans-serif;
-      background: #f4f7fb;
-      margin: 0;
-      padding: 0;
-      color: #222;
-      line-height: 1.7;
-    }
-
-    .container {
-      max-width: 1100px;
-      margin: 40px auto;
-      background: white;
-      padding: 40px;
-      border-radius: 20px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
-    }
-
-    h1 {
-      text-align: center;
-      color: #2b4c7e;
-      margin-bottom: 10px;
-    }
-
-    .subtitle {
-      text-align: center;
-      color: #666;
-      margin-bottom: 35px;
-      font-size: 16px;
-    }
-
-    h2 {
-      color: #1f3c66;
-      border-left: 6px solid #5b8def;
-      padding-left: 10px;
-      margin-top: 35px;
-    }
-
-    p {
-      font-size: 16px;
-      margin-bottom: 16px;
-    }
-
-    .highlight {
-      background: #eef4ff;
-      padding: 15px 18px;
-      border-radius: 12px;
-      margin: 20px 0;
-      border: 1px solid #d6e4ff;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 20px;
-      font-size: 15px;
-    }
-
-    th, td {
-      border: 1px solid #d9e1ec;
-      padding: 12px;
-      text-align: center;
-      vertical-align: middle;
-    }
-
-    th {
-      background: #5b8def;
-      color: white;
-    }
-
-    tr:nth-child(even) {
-      background: #f8fbff;
-    }
-
-    .toggle-btn {
-      cursor: pointer;
-      background: none;
-      border: none;
-      font-size: 18px;
-      color: #2b4c7e;
-      transition: transform 0.2s ease;
-    }
-
-    .toggle-btn.open {
-      transform: rotate(90deg);
-    }
-
-    .graph-row {
-      display: none;
-      background: #fcfdff;
-    }
-
-    .graph-box {
-      text-align: left;
-      padding: 16px 20px;
-      background: #f9fbff;
-      border-radius: 12px;
-      margin: 10px 0;
-    }
-
-    .graph-title {
-      font-weight: bold;
-      margin-bottom: 12px;
-      color: #1f3c66;
-    }
-
-    .bar-wrap {
-      margin: 10px 0 16px 0;
-    }
-
-    .bar-label {
-      font-size: 14px;
-      margin-bottom: 6px;
-      color: #333;
-    }
-
-    .bar-bg {
-      width: 100%;
-      height: 24px;
-      background: #e6edf8;
-      border-radius: 20px;
-      overflow: hidden;
-    }
-
-    .bar-fill {
-      height: 100%;
-      border-radius: 20px;
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      padding-right: 10px;
-      color: white;
-      font-size: 13px;
-      font-weight: bold;
-      box-sizing: border-box;
-    }
-
-    .probability { background: linear-gradient(90deg, #5b8def, #7aa7ff); }
-    .temperature { background: linear-gradient(90deg, #6cc070, #8ad88e); }
-    .topk { background: linear-gradient(90deg, #f2a65a, #f7bc7c); }
-
-    .mini-note {
-      font-size: 14px;
-      color: #555;
-      margin-top: 8px;
-    }
-
-    .conclusion {
-      background: #f2fff6;
-      border: 1px solid #c9f0d2;
-      padding: 18px;
-      border-radius: 12px;
-      margin-top: 20px;
-    }
-
-    .footer {
-      text-align: center;
-      margin-top: 35px;
-      color: #777;
-      font-size: 14px;
-    }
-
-    @media (max-width: 768px) {
-      .container {
-        margin: 20px;
-        padding: 24px;
-      }
-
-      table {
-        font-size: 13px;
-      }
-
-      th, td {
-        padding: 8px;
-      }
-
-      .toggle-btn {
-        font-size: 16px;
-      }
-    }
+    :root{{
+      --bg:#06080d;
+      --bg2:#0b1020;
+      --panel:#101625;
+      --text:#eef4ff;
+      --muted:#9fb0c9;
+      --line:#25324a;
+      --blue:#60a5fa;
+      --blue-2:#3b82f6;
+      --green:#34d399;
+      --orange:#fbbf24;
+      --gold:#f7c873;
+      --shadow:0 18px 45px rgba(0, 0, 0, 0.35);
+      --radius:22px;
+    }}
+    *{{box-sizing:border-box}}
+    html{{scroll-behavior:smooth}}
+    body{{
+      margin:0;
+      font-family:"Malgun Gothic", Arial, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(59,130,246,0.15), transparent 30%),
+        radial-gradient(circle at top right, rgba(168,85,247,0.12), transparent 28%),
+        linear-gradient(180deg, var(--bg2) 0%, var(--bg) 100%);
+      color:var(--text);
+      line-height:1.7;
+    }}
+    .topbar{{
+      position:sticky; top:0; z-index:20; backdrop-filter: blur(14px);
+      background:rgba(8, 12, 22, 0.82); border-bottom:1px solid rgba(37,50,74,0.95);
+    }}
+    .topbar-inner{{
+      max-width:1400px; margin:0 auto; padding:14px 20px; display:flex; gap:14px;
+      align-items:center; justify-content:space-between; flex-wrap:wrap;
+    }}
+    .brand{{display:flex; flex-direction:column; gap:2px;}}
+    .brand h1{{margin:0; font-size:24px; color:#ffffff; letter-spacing:-0.02em;}}
+    .brand span{{color:var(--muted); font-size:14px;}}
+    .nav{{display:flex; gap:10px; flex-wrap:wrap;}}
+    .nav a{{
+      text-decoration:none; color:#dbeafe; background:rgba(96,165,250,0.1);
+      border:1px solid rgba(96,165,250,0.22); padding:10px 14px; border-radius:999px;
+      font-size:14px; font-weight:700; transition:all .2s ease;
+    }}
+    .nav a:hover{{background:rgba(96,165,250,0.18); transform:translateY(-1px);}}
+    .layout{{
+      max-width:1400px; margin:24px auto; padding:0 20px 32px; display:grid;
+      grid-template-columns: 340px 1fr; gap:22px; align-items:start;
+    }}
+    .sidebar{{position:sticky; top:88px; display:flex; flex-direction:column; gap:18px;}}
+    .panel{{
+      background:linear-gradient(180deg, rgba(18,24,38,0.96), rgba(12,18,31,0.98));
+      border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow);
+    }}
+    .panel-pad{{padding:22px;}}
+    .hero{{
+      background:
+        radial-gradient(circle at top right, rgba(96,165,250,0.14), transparent 35%),
+        linear-gradient(180deg, rgba(20,28,46,0.98), rgba(12,18,31,0.98));
+    }}
+    .hero h2{{margin:0 0 10px; color:#ffffff; font-size:22px;}}
+    .hero p{{margin:0; color:var(--muted); font-size:14px;}}
+    .quote{{
+      margin-top:16px; padding:16px; background:rgba(255,255,255,0.03);
+      border:1px solid rgba(96,165,250,0.18); border-radius:16px; font-size:15px; color:#f5f9ff;
+    }}
+    .summary-grid{{display:grid; gap:12px; margin-top:16px;}}
+    .mini{{
+      background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015));
+      border:1px solid var(--line); border-radius:16px; padding:14px 16px;
+    }}
+    .mini .label{{font-size:12px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;}}
+    .mini .value{{font-size:16px; font-weight:700; color:#f8fbff;}}
+    .content{{display:flex; flex-direction:column; gap:22px;}}
+    .section{{
+      background:linear-gradient(180deg, rgba(16,22,37,0.98), rgba(10,15,27,0.98));
+      border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden;
+    }}
+    .section-header{{padding:22px 24px 10px;}}
+    .section-title{{margin:0; font-size:24px; color:#ffffff;}}
+    .section-sub{{margin-top:6px; color:var(--muted); font-size:14px;}}
+    .section-body{{padding:0 24px 24px;}}
+    .lead{{
+      background:linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02));
+      border:1px solid var(--line); border-radius:18px; padding:18px 18px; margin-top:16px;
+    }}
+    .experiment-grid{{display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:16px; margin-top:18px;}}
+    .exp-card{{
+      background:linear-gradient(180deg, rgba(19,27,44,0.98), rgba(13,19,33,0.98));
+      border:1px solid var(--line); border-radius:20px; overflow:hidden; cursor:pointer;
+      transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+    }}
+    .exp-card:hover{{transform:translateY(-3px); box-shadow:0 20px 38px rgba(0,0,0,0.35); border-color:#37527c;}}
+    .exp-head{{
+      padding:16px 18px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between;
+      align-items:center; gap:10px; background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    }}
+    .exp-title{{font-weight:800; color:#ffffff;}}
+    .badge{{
+      font-size:12px; font-weight:700; padding:6px 10px; border-radius:999px;
+      background:rgba(96,165,250,0.12); color:#cfe5ff; border:1px solid rgba(96,165,250,0.2); white-space:nowrap;
+    }}
+    .exp-body{{padding:16px 18px 18px;}}
+    .meta{{display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; margin-bottom:12px;}}
+    .meta-item{{background:rgba(255,255,255,0.03); border:1px solid var(--line); border-radius:14px; padding:10px 12px;}}
+    .meta-item .k{{font-size:12px; color:var(--muted); margin-bottom:4px;}}
+    .meta-item .v{{font-weight:700; color:#ffffff;}}
+    .result-box{{margin-top:8px; padding:12px 14px; border-radius:14px; background:rgba(255,255,255,0.03); border:1px solid var(--line); font-size:15px; color:#f4f8ff;}}
+    .bars{{margin-top:14px; display:grid; gap:12px;}}
+    .bar-label{{display:flex; justify-content:space-between; gap:10px; font-size:13px; margin-bottom:6px; color:#d7e4f8; font-weight:700;}}
+    .bar-bg{{width:100%; height:22px; background:#1b2740; border-radius:999px; overflow:hidden; border:1px solid rgba(255,255,255,0.04);}}
+    .bar-fill{{height:100%; border-radius:999px; display:flex; align-items:center; justify-content:flex-end; padding-right:10px; color:white; font-size:12px; font-weight:800; white-space:nowrap;}}
+    .probability{{background:linear-gradient(90deg, var(--blue-2), #7db3ff);}}
+    .temperature{{background:linear-gradient(90deg, #10b981, #6ee7b7);}}
+    .topk{{background:linear-gradient(90deg, #f59e0b, #fcd34d); color:#1f2937;}}
+    .note{{margin-top:14px; padding:12px 14px; background:rgba(247,200,115,0.08); border:1px solid rgba(247,200,115,0.18); border-radius:14px; color:#f4ddb0; font-size:14px;}}
+    .detail-panel{{
+      display:none; margin-top:14px; padding:16px; border-radius:16px; background:rgba(96,165,250,0.08);
+      border:1px solid rgba(96,165,250,0.18);
+    }}
+    .detail-panel.open{{display:block; animation:fadeIn .18s ease;}}
+    .detail-title{{font-weight:800; color:#ffffff; margin-bottom:10px;}}
+    .detail-panel ul{{margin:0; padding-left:18px; color:#dbe7f9;}}
+    .detail-panel li{{margin-bottom:8px;}}
+    @keyframes fadeIn {{
+      from {{ opacity:0; transform:translateY(-4px); }}
+      to {{ opacity:1; transform:translateY(0); }}
+    }}
+    .conclusion{{
+      background:radial-gradient(circle at top right, rgba(52,211,153,0.08), transparent 35%),
+      linear-gradient(180deg, rgba(20,35,30,0.55), rgba(14,22,20,0.75));
+      border:1px solid rgba(52,211,153,0.18); border-radius:18px; padding:18px; margin-top:16px; color:#eefcf5;
+    }}
+    .footer{{text-align:center; color:var(--muted); font-size:14px; padding:18px 0 6px;}}
+    @media (max-width: 1100px){{ .layout{{grid-template-columns:1fr;}} .sidebar{{position:static;}} }}
+    @media (max-width: 760px){{ .experiment-grid{{grid-template-columns:1fr;}} .topbar-inner{{align-items:flex-start;}} .brand h1{{font-size:21px;}} }}
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>Transformer 사용 보고서</h1>
-    <div class="subtitle">Temperature와 Top-k 값에 따른 AI 출력 변화 관찰</div>
-
-    <h2>1. 서론</h2>
-    <p>
-      트랜스포머를 배우면서 챗지피티가 문장을 어떻게 처리하는지 궁금해졌다.
-      AI는 사람이 생각하는 것처럼 답을 만드는 것이 아니라, 다음에 나올 단어를
-      확률적으로 고른다고 해서 신기했다. 그래서 tmpr 값에 따라 어떤 결과가 나오는지
-      알아보기 위해서 13번의 실험을 하였다.
-    </p>
-
-    <p>
-      이 실험의 목적은 같은 문장을 넣었을 때 temperature와 top-k 값에 따라 결과가
-      어떻게 바뀌는지 확인하는 것이었다. 특히 temperature가 낮을수록 결과가 더
-      일정하게 나오는지 알고 싶었다.
-    </p>
-
-    <p>
-      나는 tmpr가 낮으면 AI가 결과에 좀더 확신을 가질 것이라고 예상했다.
-      반대로 temperature가 높으면 확신을 가지지 못하여 여러 단어가 선택될 수 있어서
-      결과가 더 다양하게 나올 것이라고 예상했다.
-    </p>
-
-    <div class="highlight">
-      <strong>실험 문장</strong><br />
-      The robot dropped the box because it was too heavy.
-    </div>
-
-    <h2>2. 실험 결과</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>그래프</th>
-          <th>실험번호</th>
-          <th>Temperature</th>
-          <th>Top-k</th>
-          <th>결과</th>
-          <th>확률</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><button class="toggle-btn" onclick="toggleGraph(1, this)">▶</button></td>
-          <td>1</td><td>0.2</td><td>1</td><td>weight</td><td>100%</td>
-        </tr>
-        <tr id="graph-1" class="graph-row">
-          <td colspan="6">
-            <div class="graph-box">
-              <div class="graph-title">실험 1 그래프</div>
-              <div class="bar-wrap">
-                <div class="bar-label">결과 확률</div>
-                <div class="bar-bg"><div class="bar-fill probability" style="width:100%;">100%</div></div>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar-label">Temperature</div>
-                <div class="bar-bg"><div class="bar-fill temperature" style="width:3.3%;">0.2</div></div>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar-label">Top-k</div>
-                <div class="bar-bg"><div class="bar-fill topk" style="width:2.5%;">1</div></div>
-              </div>
-              <div class="mini-note">temperature가 매우 낮고 top-k도 1이라 가장 확실한 후보만 선택된 경우이다.</div>
-            </div>
-          </td>
-        </tr>
-
-        <tr>
-          <td><button class="toggle-btn" onclick="toggleGraph(2, this)">▶</button></td>
-          <td>2</td><td>0.3</td><td>1</td><td>was</td><td>100%</td>
-        </tr>
-        <tr id="graph-2" class="graph-row">
-          <td colspan="6">
-            <div class="graph-box">
-              <div class="graph-title">실험 2 그래프</div>
-              <div class="bar-wrap">
-                <div class="bar-label">결과 확률</div>
-                <div class="bar-bg"><div class="bar-fill probability" style="width:100%;">100%</div></div>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar-label">Temperature</div>
-                <div class="bar-bg"><div class="bar-fill temperature" style="width:5%;">0.3</div></div>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar-label">Top-k</div>
-                <div class="bar-bg"><div class="bar-fill topk" style="width:2.5%;">1</div></div>
-              </div>
-              <div class="mini-note">실험 1과 비슷하게 낮은 temperature 때문에 결과가 매우 고정적으로 나타났다.</div>
-            </div>
-          </td>
-        </tr>
-
-        <tr>
-          <td><button class="toggle-btn" onclick="toggleGraph(3, this)">▶</button></td>
-          <td>3</td><td>0.4</td><td>35</td><td>newline</td><td>89.74%</td>
-        </tr>
-        <tr id="graph-3" class="graph-row">
-          <td colspan="6">
-            <div class="graph-box">
-              <div class="graph-title">실험 3 그래프</div>
-              <div class="bar-wrap">
-                <div class="bar-label">결과 확률</div>
-                <div class="bar-bg"><div class="bar-fill probability" style="width:89.74%;">89.74%</div></div>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar-label">Temperature</div>
-                <div class="bar-bg"><div class="bar-fill temperature" style="width:6.7%;">0.4</div></div>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar-label">Top-k</div>
-                <div class="bar-bg"><div class="bar-fill topk" style="width:87.5%;">35</div></div>
-              </div>
-              <div class="mini-note">temperature는 낮지만 top-k가 커지면서 후보 수가 많아졌다.</div>
-            </div>
-          </td>
-        </tr>
-
-        <tr>
-          <td><button class="toggle-btn" onclick="toggleGraph(4, this)">▶</button></td>
-          <td>4</td><td>0.7</td><td>35</td><td>The</td><td>13.32%</td>
-        </tr>
-        <tr id="graph-4" class="graph-row">
-          <td colspan="6">
-            <div class="graph-box">
-              <div class="graph-title">실험 4 그래프</div>
-              <div class="bar-wrap">
-                <div class="bar-label">결과 확률</div>
-                <div class="bar-bg"><div class="bar-fill probability" style="width:13.32%;">13.32%</div></div>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar-label">Temperature</div>
-                <div class="bar-bg"><div class="bar-fill temperature" style="width:11.7%;">0.7</div></div>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar-label">Top-k</div>
-                <div class="bar-bg"><div class="bar-fill topk" style="width:87.5%;">35</div></div>
-              </div>
-              <div class="mini-note">temperature가 올라가면서 확률이 분산되어 결과 확률이 크게 낮아졌다.</div>
-            </div>
-          </td>
-        </tr>
-
-        <tr>
-          <td><button class="toggle-btn" onclick="toggleGraph(5, this)">▶</button></td>
-          <td>5</td><td>2</td><td>35</td><td>A</td><td>2.54%</td>
-        </tr>
-        <tr id="graph-5" class="graph-row">
-          <td colspan="6">
-            <div class="graph-box">
-              <div class="graph-title">실험 5 그래프</div>
-              <div class="bar-wrap">
-                <div class="bar-label">결과 확률</div>
-                <div class="bar-bg"><div class="bar-fill probability" style="width:2.54%;">2.54%</div></div>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar-label">Temperature</div>
-                <div class="bar-bg"><div class="bar-fill temperature" style="width:33.3%;">2</div></div>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar-label">Top-k</div>
-                <div class="bar-bg"><div class="bar-fill topk" style="width:87.5%;">35</div></div>
-              </div>
-              <div class="mini-note">높은 temperature로 인해 결과가 매우 다양해지고 한 단어의 확률은 낮아졌다.</div>
-            </div>
-          </td>
-        </tr>
-
-        <tr>
-          <td><button class="toggle-btn" onclick="toggleGraph(6, this)">▶</button></td>
-          <td>6</td><td>3</td><td>35</td><td>It</td><td>5.41%</td>
-        </tr>
-        <tr id="graph-6" class="graph-row">
-          <td colspan="6">
-            <div class="graph-box">
-              <div class="graph-title">실험 6 그래프</div>
-              <div class="bar-wrap">
-                <div class="bar-label">결과 확률</div>
-                <div class="bar-bg"><div class="bar-fill probability" style="width:5.41%;">5.41%</div></div>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar-label">Temperature</div>
-                <div class="bar-bg"><div class="bar-fill temperature" style="width:50%;">3</div></div>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar-label">Top-k</div>
-                <div class="bar-bg"><div class="bar-fill topk" style="width:87.5%;">35</div></div>
-              </div>
-              <div class="mini-note">temperature가 더 높아져 여러 후보가 고르게 선택될 수 있는 상태이다.</div>
-            </div>
-          </td>
-        </tr>
-
-        <tr>
-          <td><button class="toggle-btn" onclick="toggleGraph(7, this)">▶</button></td>
-          <td>7</td><td>4</td><td>35</td><td>But</td><td>3.17%</td>
-        </tr>
-        <tr id="graph-7" class="graph-row">
-          <td colspan="6">
-            <div class="graph-box">
-              <div class="graph-title">실험 7 그래프</div>
-              <div class="bar-wrap">
-                <div class="bar-label">결과 확률</div>
-                <div class="bar-bg"><div class="bar-fill probability" style="width:3.17%;">3.17%</div></div>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar-label">Temperature</div>
-                <div class="bar-bg"><div class="bar-fill temperature" style="width:66.7%;">4</div></div>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar-label">Top-k</div>
-                <div class="bar-bg"><div class="bar-fill topk" style="width:87.5%;">35</div></div>
-              </div>
-              <div class="mini-note">temperature가 높아질수록 한 결과에 대한 확신이 더 약해진다.</div>
-            </div>
-          </td>
-        </tr>
-
-        <tr>
-          <td><button class="toggle-btn" onclick="toggleGraph(8, this)">▶</button></td>
-          <td>8</td><td>6</td><td>35</td><td>When</td><td>3.08%</td>
-        </tr>
-        <tr id="graph-8" class="graph-row">
-          <td colspan="6">
-            <div class="graph-box">
-              <div class="graph-title">실험 8 그래프</div>
-              <div class="bar-wrap">
-                <div class="bar-label">결과 확률</div>
-                <div class="bar-bg"><div class="bar-fill probability" style="width:3.08%;">3.08%</div></div>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar-label">Temperature</div>
-                <div class="bar-bg"><div class="bar-fill temperature" style="width:100%;">6</div></div>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar-label">Top-k</div>
-                <div class="bar-bg"><div class="bar-fill topk" style="width:87.5%;">35</div></div>
-              </div>
-              <div class="mini-note">가장 높은 temperature 조건으로, 출력의 다양성이 매우 커진 실험이다.</div>
-            </div>
-          </td>
-        </tr>
-
-        <tr>
-          <td><button class="toggle-btn" onclick="toggleGraph(9, this)">▶</button></td>
-          <td>9</td><td>3</td><td>15</td><td>After</td><td>5.08%</td>
-        </tr>
-        <tr id="graph-9" class="graph-row">
-          <td colspan="6">
-            <div class="graph-box">
-              <div class="graph-title">실험 9 그래프</div>
-              <div class="bar-wrap">
-                <div class="bar-label">결과 확률</div>
-                <div class="bar-bg"><div class="bar-fill probability" style="width:5.08%;">5.08%</div></div>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar-label">Temperature</div>
-                <div class="bar-bg"><div class="bar-fill temperature" style="width:50%;">3</div></div>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar-label">Top-k</div>
-                <div class="bar-bg"><div class="bar-fill topk" style="width:37.5%;">15</div></div>
-              </div>
-              <div class="mini-note">같은 temperature에서도 top-k를 줄이면 후보 범위가 제한된다.</div>
-            </div>
-          </td>
-        </tr>
-
-        <tr>
-          <td><button class="toggle-btn" onclick="toggleGraph(10, this)">▶</button></td>
-          <td>10</td><td>2</td><td>15</td><td>After</td><td>5.08%</td>
-        </tr>
-        <tr id="graph-10" class="graph-row">
-          <td colspan="6">
-            <div class="graph-box">
-              <div class="graph-title">실험 10 그래프</div>
-              <div class="bar-wrap">
-                <div class="bar-label">결과 확률</div>
-                <div class="bar-bg"><div class="bar-fill probability" style="width:5.08%;">5.08%</div></div>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar-label">Temperature</div>
-                <div class="bar-bg"><div class="bar-fill temperature" style="width:33.3%;">2</div></div>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar-label">Top-k</div>
-                <div class="bar-bg"><div class="bar-fill topk" style="width:37.5%;">15</div></div>
-              </div>
-              <div class="mini-note">top-k가 15로 같을 때 temperature 차이에 따른 결과를 비교할 수 있다.</div>
-            </div>
-          </td>
-        </tr>
-
-        <tr>
-          <td><button class="toggle-btn" onclick="toggleGraph(11, this)">▶</button></td>
-          <td>11</td><td>3</td><td>40</td><td>I</td><td>3.55%</td>
-        </tr>
-        <tr id="graph-11" class="graph-row">
-          <td colspan="6">
-            <div class="graph-box">
-              <div class="graph-title">실험 11 그래프</div>
-              <div class="bar-wrap">
-                <div class="bar-label">결과 확률</div>
-                <div class="bar-bg"><div class="bar-fill probability" style="width:3.55%;">3.55%</div></div>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar-label">Temperature</div>
-                <div class="bar-bg"><div class="bar-fill temperature" style="width:50%;">3</div></div>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar-label">Top-k</div>
-                <div class="bar-bg"><div class="bar-fill topk" style="width:100%;">40</div></div>
-              </div>
-              <div class="mini-note">top-k가 가장 커서 선택 가능한 후보가 가장 많은 실험이다.</div>
-            </div>
-          </td>
-        </tr>
-
-        <tr>
-          <td><button class="toggle-btn" onclick="toggleGraph(12, this)">▶</button></td>
-          <td>12</td><td>3</td><td>5</td><td>"</td><td>14.83%</td>
-        </tr>
-        <tr id="graph-12" class="graph-row">
-          <td colspan="6">
-            <div class="graph-box">
-              <div class="graph-title">실험 12 그래프</div>
-              <div class="bar-wrap">
-                <div class="bar-label">결과 확률</div>
-                <div class="bar-bg"><div class="bar-fill probability" style="width:14.83%;">14.83%</div></div>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar-label">Temperature</div>
-                <div class="bar-bg"><div class="bar-fill temperature" style="width:50%;">3</div></div>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar-label">Top-k</div>
-                <div class="bar-bg"><div class="bar-fill topk" style="width:12.5%;">5</div></div>
-              </div>
-              <div class="mini-note">top-k가 작아져 후보가 적어지면서 상대적으로 확률이 더 집중되었다.</div>
-            </div>
-          </td>
-        </tr>
-
-        <tr>
-          <td><button class="toggle-btn" onclick="toggleGraph(13, this)">▶</button></td>
-          <td>13</td><td>2</td><td>20</td><td>But</td><td>4.17%</td>
-        </tr>
-        <tr id="graph-13" class="graph-row">
-          <td colspan="6">
-            <div class="graph-box">
-              <div class="graph-title">실험 13 그래프</div>
-              <div class="bar-wrap">
-                <div class="bar-label">결과 확률</div>
-                <div class="bar-bg"><div class="bar-fill probability" style="width:4.17%;">4.17%</div></div>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar-label">Temperature</div>
-                <div class="bar-bg"><div class="bar-fill temperature" style="width:33.3%;">2</div></div>
-              </div>
-              <div class="bar-wrap">
-                <div class="bar-label">Top-k</div>
-                <div class="bar-bg"><div class="bar-fill topk" style="width:50%;">20</div></div>
-              </div>
-              <div class="mini-note">중간 정도의 temperature와 top-k 조건에서 나온 결과이다.</div>
-            </div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-
-    <h2>3. 결론</h2>
-    <div class="conclusion">
-      결론적으로 tmpr이 낮으면 낮을수록 AI는 결과에 확신을 가지게 되며,
-      높을수록 다양한 결과가 나온다는 것을 알게 되었다.
-      즉, temperature가 낮을 때는 높은 확률의 단어를 더 안정적으로 선택하고,
-      temperature가 높아질수록 여러 후보 단어가 선택될 가능성이 커진다는 점을
-      확인할 수 있었다.
-    </div>
-
-    <div class="footer">
-      DG AI 스쿨 실험 보고서
+  <div class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <h1>Transformer 사용 보고서</h1>
+        <span>Temperature와 Top-k 값에 따른 AI 출력 변화 관찰</span>
+      </div>
+      <div class="nav">
+        <a href="#intro">서론</a>
+        <a href="#results">실험 결과</a>
+        <a href="#conclusion">결론</a>
+      </div>
     </div>
   </div>
 
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="panel panel-pad hero">
+        <h2>보고서 개요</h2>
+        <p>같은 문장을 입력했을 때 temperature와 top-k 값이 바뀌면 AI의 출력이 어떻게 달라지는지 관찰한 실험 보고서</p>
+        <div class="quote">
+          <strong>실험 문장</strong><br>
+          The robot dropped the box because it was too heavy.
+        </div>
+        <div class="summary-grid">
+          <div class="mini"><div class="label">실험 횟수</div><div class="value">13번</div></div>
+          <div class="mini"><div class="label">핵심 변수</div><div class="value">Temperature, Top-k</div></div>
+          <div class="mini"><div class="label">주요 관찰</div><div class="value">temperature가 낮을수록 더 안정적이고, 높을수록 더 다양하게 출력됨</div></div>
+        </div>
+      </div>
+
+      <div class="panel panel-pad">
+        <h2 style="margin:0 0 12px; font-size:20px; color:#ffffff;">빠른 정리</h2>
+        <div class="lead" style="margin-top:0;">
+          <p>
+            트랜스포머를 배우면서 챗지피티가 문장을 어떻게 처리하는지 궁금해졌다.
+            AI는 사람이 생각하는 것처럼 답을 만드는 것이 아니라, 다음에 나올 단어를
+            확률적으로 고른다고 해서 신기했다. 그래서 tmpr 값에 따라 어떤 결과가 나오는지
+            알아보기 위해서 13번의 실험을 하였다.
+          </p>
+        </div>
+      </div>
+    </aside>
+
+    <main class="content">
+      <section class="section" id="intro">
+        <div class="section-header">
+          <h2 class="section-title">1. 서론</h2>
+          <div class="section-sub">실험 목적과 예상 정리</div>
+        </div>
+        <div class="section-body">
+          <div class="lead">
+            <p>
+              트랜스포머를 배우면서 챗지피티가 문장을 어떻게 처리하는지 궁금해졌다.
+              AI는 사람이 생각하는 것처럼 답을 만드는 것이 아니라, 다음에 나올 단어를
+              확률적으로 고른다고 해서 신기했다. 그래서 tmpr 값에 따라 어떤 결과가 나오는지
+              알아보기 위해서 13번의 실험을 하였다.
+            </p>
+            <p>
+              이 실험의 목적은 같은 문장을 넣었을 때 temperature와 top-k 값에 따라 결과가
+              어떻게 바뀌는지 확인하는 것이었다. 특히 temperature가 낮을수록 결과가 더
+              일정하게 나오는지 알고 싶었다.
+            </p>
+            <p>
+              나는 tmpr가 낮으면 AI가 결과에 좀더 확신을 가질 것이라고 예상했다.
+              반대로 temperature가 높으면 확신을 가지지 못하여 여러 단어가 선택될 수 있어서
+              결과가 더 다양하게 나올 것이라고 예상했다.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="results">
+        <div class="section-header">
+          <h2 class="section-title">2. 실험 결과</h2>
+          <div class="section-sub">카드를 클릭하면 각 실험의 상세 해석이 펼쳐집니다.</div>
+        </div>
+        <div class="section-body">
+          <div class="experiment-grid">
+            {''.join(cards_html)}
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="conclusion">
+        <div class="section-header">
+          <h2 class="section-title">3. 결론</h2>
+          <div class="section-sub">원래 작성한 결론 내용을 그대로 유지</div>
+        </div>
+        <div class="section-body">
+          <div class="conclusion">
+            결론적으로 tmpr이 낮으면 낮을수록 AI는 결과에 확신을 가지게 되며,
+            높을수록 다양한 결과가 나온다는 것을 알게 되었다.
+            즉, temperature가 낮을 때는 높은 확률의 단어를 더 안정적으로 선택하고,
+            temperature가 높아질수록 여러 후보 단어가 선택될 가능성이 커진다는 점을
+            확인할 수 있었다.
+          </div>
+          <div class="footer">DG AI 스쿨 실험 보고서</div>
+        </div>
+      </section>
+    </main>
+  </div>
+
   <script>
-    function toggleGraph(num, btn) {
-      const row = document.getElementById("graph-" + num);
-      if (row.style.display === "table-row") {
-        row.style.display = "none";
-        btn.classList.remove("open");
-      } else {
-        row.style.display = "table-row";
-        btn.classList.add("open");
-      }
-    }
+    function toggleDetail(num) {{
+      const panel = document.getElementById('detail-' + num);
+      panel.classList.toggle('open');
+    }}
   </script>
 </body>
 </html>
+"""
+
+path = Path("/mnt/data/transformer_report_dark_detailed_click.html")
+path.write_text(html, encoding="utf-8")
+print(path.as_posix())
